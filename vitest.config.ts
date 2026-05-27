@@ -12,6 +12,7 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include: ["app/api/**", "lib/**"],
     },
+    exclude: ["node_modules/**", "e2e/**"],
     fileParallelism: false,
     sequence: { concurrent: false },
   },
