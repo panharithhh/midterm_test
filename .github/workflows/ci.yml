@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: "file:./test.db"
+
+      - name: Push database schema
+        run: npx prisma db push
+        env:
+          DATABASE_URL: "file:./test.db"
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+        env:
+          DATABASE_URL: "file:./test.db"
+          JWT_SECRET: "ci-test-secret"
+
+  notify:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "CI ${{ needs.test.result }} — ${{ github.repository }}"
+          to: srengty@gmail.com,${{ github.event.head_commit.author.email }}
+          from: ${{ secrets.MAIL_USERNAME }}
+          body: |
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.event.head_commit.message }}
+            Author: ${{ github.event.head_commit.author.name }} <${{ github.event.head_commit.author.email }}>
+            Status: ${{ needs.test.result }}
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
