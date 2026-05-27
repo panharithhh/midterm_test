@@ -32,14 +32,62 @@ jobs:
         env:
           DATABASE_URL: "file:./test.db"
 
-      - name: Run tests with coverage
+      - name: Run API tests with coverage
         run: npm run test:coverage
         env:
           DATABASE_URL: "file:./test.db"
           JWT_SECRET: "ci-test-secret"
 
+  e2e:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ job.status }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: "file:./test.db"
+
+      - name: Push database schema
+        run: npx prisma db push
+        env:
+          DATABASE_URL: "file:./test.db"
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          DATABASE_URL: "file:./test.db"
+          JWT_SECRET: "ci-test-secret"
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
+        env:
+          DATABASE_URL: "file:./test.db"
+          JWT_SECRET: "ci-test-secret"
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   notify:
-    needs: test
+    needs: [test, e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -59,5 +107,6 @@ jobs:
             Branch: ${{ github.ref_name }}
             Commit: ${{ github.event.head_commit.message }}
             Author: ${{ github.event.head_commit.author.name }} <${{ github.event.head_commit.author.email }}>
-            Status: ${{ needs.test.result }}
+            API Tests: ${{ needs.test.result }}
+            UI Tests (Playwright): ${{ needs.e2e.result }}
             Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
